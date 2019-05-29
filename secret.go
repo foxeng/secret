@@ -1,6 +1,9 @@
 package secret
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,15 +16,41 @@ type Vault interface {
 	Get(key string) (value string, err error)
 }
 
+type encKey [32]byte
+
 type vault struct {
 	path string
-	key  string
+	key  encKey
+}
+
+func encryptAES(key encKey, message []byte) (encrypted []byte) {
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		panic("Internal key size is not right!")
+	}
+	iv := make([]byte, block.BlockSize()) // NOTE: Normally, this should be properly initialized
+	stream := cipher.NewCFBEncrypter(block, iv)
+	encrypted = make([]byte, len(message))
+	stream.XORKeyStream(encrypted, message)
+	return encrypted
+}
+
+func decryptAES(key encKey, encrypted []byte) (message []byte) {
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		panic("Internal key size is not right!")
+	}
+	iv := make([]byte, block.BlockSize()) // NOTE: Normally, this should be properly initialized
+	stream := cipher.NewCFBDecrypter(block, iv)
+	message = make([]byte, len(encrypted))
+	stream.XORKeyStream(message, encrypted)
+	return message
 }
 
 // FileVault returns a new Vault for the file specified in path using encKey
 // as the encryption key
-func FileVault(encKey, path string) Vault {
-	return &vault{path: path, key: encKey}
+func FileVault(key, path string) Vault {
+	return &vault{path: path, key: sha256.Sum256([]byte(key))}
 }
 
 func (v *vault) Set(key, value string) error {
@@ -30,8 +59,7 @@ func (v *vault) Set(key, value string) error {
 	secrets := make(map[string]string)
 	eeb, err := ioutil.ReadFile(v.path) // encrypted, encoded bytes
 	if err == nil {
-		// TODO: Decrypt
-		deb := eeb // decrypted, encoded bytes
+		deb := decryptAES(v.key, eeb) // decrypted, encoded bytes
 
 		if err := json.Unmarshal(deb, &secrets); err != nil {
 			return err
@@ -46,9 +74,9 @@ func (v *vault) Set(key, value string) error {
 		return err
 	}
 
-	// TODO: Encrypt
+	eeb = encryptAES(v.key, deb) // encrypted, encoded bytes
 
-	if err := ioutil.WriteFile(v.path, deb, 0755); err != nil {
+	if err := ioutil.WriteFile(v.path, eeb, 0644); err != nil {
 		return err
 	}
 	return nil
@@ -60,8 +88,7 @@ func (v *vault) Get(key string) (value string, err error) {
 		return "", err
 	}
 
-	// TODO: Decrypt
-	deb := eeb // decrypted, encoded bytes
+	deb := decryptAES(v.key, eeb) // decrypted, encoded bytes
 
 	secrets := make(map[string]string)
 	if err := json.Unmarshal(deb, &secrets); err != nil {

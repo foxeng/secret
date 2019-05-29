@@ -7,12 +7,15 @@ import (
 	"github.com/foxeng/secret"
 )
 
-const usage = `secret is a CLI for managing your secrets
+const (
+	usage = `secret is a CLI for managing your secrets
 
 Usage:
 	secret get <key> -k <encKey>
 	secret set <key> <value> -k <encKey>
 `
+	defaultPath = "secrets.db"
+)
 
 func main() {
 	args := os.Args[1:]
@@ -21,14 +24,16 @@ func main() {
 		return
 	}
 
-	// TODO: Determine path either from the user or from the environment
-	path := "secrets.db"
+	path := defaultPath
 
 	switch args[0] {
 	case "get":
 		if len(args) < 4 || args[2] != "-k" {
 			fmt.Print(usage)
 			return
+		}
+		if len(args) == 6 && args[4] == "-f" { // user-specified path
+			path = args[5]
 		}
 		key := args[1]
 		encKey := args[3]
@@ -43,6 +48,9 @@ func main() {
 		if len(args) < 5 || args[3] != "-k" {
 			fmt.Print(usage)
 			return
+		}
+		if len(args) == 7 && args[5] == "-f" { // user-specified path
+			path = args[6]
 		}
 		key := args[1]
 		value := args[2]
